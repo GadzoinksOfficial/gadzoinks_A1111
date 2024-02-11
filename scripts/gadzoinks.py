@@ -102,6 +102,7 @@ def upload(image_bytes,name,handle,auth_key,app,extra_generation_params,model,pr
             "width" :size[0] , "height" : size[1], "maturity_rating" : maturity_rating ,
             "set_name" : set_name, "set_timestring" : the_set_timestamp,
            "imageType" : imgType}
+    desc["model"] = extra_generation_params.pop("gadzoinks_primary_model","NoModel")
     for k,v in extra_generation_params.items():
         dprint( f"upload()  extra_generation_params {k}={v}")
         desc[k] = v
@@ -159,6 +160,12 @@ def buildDownloadButton(download_button):
          (global_for_download_parameters["txt2img_height"], "height"),
          (global_for_download_parameters["txt2img_seed"], "seed"),
          (global_for_download_parameters["txt2img_steps"], "steps"),
+         (global_for_download_parameters["txt2img_hr_upscaler"],"hires_upscaler"),
+         (global_for_download_parameters["txt2img_hires_steps"],"hires_steps"),
+         (global_for_download_parameters["txt2img_hr_scale"],"hires_upscale"),
+         (global_for_download_parameters["txt2img_checkpoint"],"refiner"),
+         (global_for_download_parameters["txt2img_switch_at"],"refiner_switch_at"),
+
     ]
     def dnload_button_click(acount_handle,auth_key,set_name,maturity_rating):
         print(f"toolbar dnload_button_click {acount_handle} {auth_key} {set_name}, {maturity_rating}")
@@ -296,8 +303,13 @@ class Scripts(scripts.Script):
     def postprocess(self, p, processed, *args):
         dprint( f"postprocess")
 
+    # p is StableDiffusionProcessingTxt2Img
     def after_extra_networks_activate(self, p, *args, **kwargs):
         dprint( f"after_extra_networks_activate")
+        dprint( f"p:{p}" )
+        dprint( f"p.sd_model_name:{p.sd_model_name}" )
+        dprint( f"p.extra_generation_params:{p.extra_generation_params}" )
+        p.extra_generation_params["gadzoinks_primary_model"] = p.sd_model_name
 
     def setup(self, p, *args):
         dprint(f"setup")
@@ -309,7 +321,8 @@ class Scripts(scripts.Script):
         global global_ui
         global global_for_download_parameters
         want = {"txt2img_prompt","txt2img_neg_prompt","txt2img_sampling", "txt2img_cfg_scale", "txt2img_denoising_strength", 
-            "txt2img_width", "txt2img_height", "txt2img_seed", "txt2img_steps"}
+            "txt2img_width", "txt2img_height", "txt2img_seed", "txt2img_steps","txt2img_hr_upscaler","txt2img_hires_steps",
+            "txt2img_hr_scale","txt2img_checkpoint","txt2img_switch_at"}
         dprint(f"G1 after_component {component.elem_id}")
         
         if component.elem_id in want:
