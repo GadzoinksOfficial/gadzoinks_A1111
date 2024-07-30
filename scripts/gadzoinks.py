@@ -41,8 +41,7 @@ last_model = ""
 the_set_timestamp = ""
 the_re_extra_net = re.compile(r"<(\w+):([^>]+)>")    # copied from rxtra_networks.py
 type_of_gr_update = type(gr.update())
-the_rest_url ="https://kcd4tcn593.execute-api.us-east-1.amazonaws.com/ProdV1/"
-
+the_rest_url = "https://e6h2r5adh8.execute-api.us-east-1.amazonaws.com/prod/"
         
 def printStruct(struc, indent=0):
    if isinstance(struc, dict):
