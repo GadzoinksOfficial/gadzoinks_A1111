@@ -41,7 +41,9 @@ last_model = ""
 the_set_timestamp = ""
 the_re_extra_net = re.compile(r"<(\w+):([^>]+)>")    # copied from rxtra_networks.py
 type_of_gr_update = type(gr.update())
+xthe_rest_url ="https://kcd4tcn593.execute-api.us-east-1.amazonaws.com/ProdV1/"
 the_rest_url = "https://e6h2r5adh8.execute-api.us-east-1.amazonaws.com/prod/"
+
         
 def printStruct(struc, indent=0):
    if isinstance(struc, dict):
@@ -68,9 +70,15 @@ def printStruct(struc, indent=0):
 # image is BytesIO
 def uploadDesc(image_bytes, desc,acount_handle,auth_key):
     global last_batch
-    #print(f"upDesc {desc}")
     try:
-        headers = {'Accept': 'application/json', 'content-type':'application/json', 
+        dprint(f"uploadDesc() desc:{desc}")
+        for key, value in desc.items():
+            if callable(value):
+                dprint(f"{key} is a function named {value.__name__}")
+            else:
+                dprint(f"{key} == {value}")
+        
+        headers = {'Accept': 'application/json', 'content-type':'application/json',
                    'X-Gadzoink-handle':acount_handle,  'X-Gadzoink-auth':auth_key}
 
         dprint(f"uploadDesc last_batch {last_batch}")
@@ -98,7 +106,7 @@ def uploadDesc(image_bytes, desc,acount_handle,auth_key):
         gr.Warning(f"Gadzoinks Extension upload failed. exception {e}")
         print(f"Gadzoinks Extension upload failed. exception {e}\n ")
 
-def upload(image_bytes,name,handle,auth_key,app,extra_generation_params,model,prompt,negative_prompt ,seed ,steps , sampler, cfg_scale , denoising_strength, size, imgType,set_name,maturity_rating, private_upload_state):
+def Zupload(image_bytes,name,handle,auth_key,app,extra_generation_params,model,prompt,negative_prompt ,seed ,steps , sampler, cfg_scale , denoising_strength, size, imgType,set_name,maturity_rating, private_upload_state):
     if denoising_strength is None:
         denoising_strength = 0.0
     desc = { "filename" : name, "handle" : handle , "app" : app , "model" : model ,
@@ -114,6 +122,46 @@ def upload(image_bytes,name,handle,auth_key,app,extra_generation_params,model,pr
     dprint( f"upload() desc:{desc}")
     uploadDesc(image_bytes,desc,handle,auth_key)
 
+'''
+use imageBytes it might not be same as kwargs['image_bytes']
+'''
+def upload(imageBytes, **kwargs):
+    auth_key =  kwargs.get("auth_key")
+    handle =  kwargs.get("handle", kwargs.get("acount_handle"))
+    desc = {
+        "filename": kwargs.get("name"),
+        "handle": handle,
+        "app": kwargs.get("app"),
+        "model": kwargs.get("model"),
+        "prompt": kwargs.get("prompt"),
+        "negative_prompt": kwargs.get("negative_prompt"),
+        "seed": kwargs.get("seed"),
+        "steps": kwargs.get("steps",20),
+        "sampler": kwargs.get("sampler"),
+        "cfg_scale": kwargs.get("cfg_scale",7.0),
+        "denoising_strength": kwargs.get("denoising_strength", 0.0),
+        "width": kwargs.get("size", [None, None])[0],
+        "height": kwargs.get("size", [None, None])[1],
+        "maturity_rating": kwargs.get("maturity_rating"),
+        "set_name": kwargs.get("set_name"),
+        "set_timestring": kwargs.get("the_set_timestamp"),
+        "imageType": kwargs.get("imgType"),
+        "visibility": int(kwargs.get("private_upload_state", 0)),
+    }
+
+    extra_generation_params = kwargs.get("extra_generation_params", {})
+    desc["model"] = extra_generation_params.pop("gadzoinks_primary_model", "NoModel")
+    #TODO I cannot get extra_generation_params["Hires prompt"]
+    # to work, so I am just skipping it
+    for k, v in extra_generation_params.items():
+        if callable(v):
+            dprint(f"upload() {k} is a function named {v.__name__}  SKIPPING")
+        else:
+            desc[k] = v
+            dprint(f"upload() extra_generation_params {k}={desc[k]}")
+    dprint(f"upload() desc: {desc}")
+    uploadDesc(imageBytes,desc,handle,auth_key)
+    
 def tpl_upload_button_click():
     #print(f"tpl_upload_button_click()")
     doUpload()
@@ -123,6 +171,25 @@ def buttonGetParamsClick():
     pass
 
 def upload_button_click(acount_handle,auth_key,set_name,maturity_rating):
+    global global_for_manual_upload,global_extra_image
+    dprint(f"toolbar upload_button_click {acount_handle} {auth_key} {set_name}, {maturity_rating}")
+    image_bytes = None
+    if  global_extra_image:
+        dprint("have global_extra_image")
+        buffer = BytesIO()
+        global_extra_image.save(buffer, "png")
+        image_bytes = buffer.getvalue()
+    else:
+        image_bytes = global_for_manual_upload.get('image_bytes')
+        dprint("trying  global_for_manual_upload.get('image_bytes')")
+    dprint(f"image_bytes type {type(image_bytes)}")
+    dprint(f"image_bytes {len(image_bytes)}")
+    if not image_bytes:
+        dprint(f"upload_button_click NO IMAGE")
+        return
+    upload(image_bytes, **global_for_manual_upload)
+    
+def Zupload_button_click(acount_handle,auth_key,set_name,maturity_rating):
     global global_for_manual_upload,global_extra_image
     print(f"toolbar upload_button_click {acount_handle} {auth_key} {set_name}, {maturity_rating}")
     image_bytes = None
@@ -411,31 +478,41 @@ class Scripts(scripts.Script):
         pass
     
     def process_batch(self,p, is_auto_upload_enabled,is_private_upload_enabled,acount_handle,auth_key,set_name,maturity_rating, **kwargs):
-        dprint("process_batch")
+        dprint("process_batch delegate")
         global the_set_timestamp
         global upload_prompts
         global last_prompt,last_seed,last_batch,last_model
         dprint(f"process_batch  {p.prompt}")
         for key, value in kwargs.items():
-            dprint("%s == %s" % (key, value))
+            try:
+                if callable(value):
+                    dprint(f"{key} is a function named {value.__name__}")
+                else:
+                    dprint("%s == %s" % (key, value))
+            except Exception as e:
+                dpring(f"Exception {e} with key:{key}")
         idx = kwargs['batch_number']
         if idx == 0:
             the_set_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
         pr = kwargs["prompts"][0]
         #print(f" idx {idx} prompt {pr}")
         upload_prompts[kwargs['batch_number']] = kwargs["prompts"][0]
+        dprint("D5")
         last_prompt = kwargs["prompts"][0]  # dynamic prompt set , lora stripped
         last_seed = kwargs["seeds"][0]
         last_batch =  kwargs["batch_number"]
         p.extra_generation_params["gadzoinks_maturity_rating"] = maturity_rating
-        p.extra_generation_params["gadzoinks_set_name"] = set_name
+        if set_name:
+            p.extra_generation_params["gadzoinks_set_name"] = set_name
+        dprint("D10")
+        '''
         config_file = os.path.join(scripts.basedir(), "gadzoinks_config.json")
         try:
             with open(config_file, "w") as json_file:
                 json.dump(p.extra_generation_params, json_file)
         except Exception as e:
             print( f"process_batch Exception {e}")
-        
+        '''
         
         
         
@@ -477,6 +554,7 @@ class Scripts(scripts.Script):
         buffer = BytesIO()
         image.save(buffer, "png")
         image_bytes = buffer.getvalue()
+        dprint(f"image_bytes {len(image_bytes)}")
         global_for_manual_upload['image_bytes'] = image_bytes
         global_for_manual_upload['name'] = name
         global_for_manual_upload['acount_handle'] = acount_handle
@@ -498,10 +576,31 @@ class Scripts(scripts.Script):
         global_for_manual_upload['denoising_strength'] = p.denoising_strength
         if not is_auto_upload_enabled:
             return
-
+        '''
         upload(image_bytes,name,acount_handle,auth_key,'automatic1111', p.extra_generation_params, model,
             prompt ,neg_prompt ,seed ,steps , sampler, cfg_scale , denoising_strength 
             ,size,"png",set_name,maturity_rating, is_private_upload_enabled  )
+        '''
+        upload(image_bytes,
+           name=name,
+           handle=acount_handle,
+           auth_key=auth_key,
+           app='automatic1111',
+           extra_generation_params=p.extra_generation_params,
+           model=model,
+           prompt=prompt,
+           negative_prompt=neg_prompt,
+           seed=seed,
+           steps=steps,
+           sampler=sampler,
+           cfg_scale=cfg_scale,
+           denoising_strength=denoising_strength,
+           size=size,
+           imgType="png",
+           set_name=set_name,
+           maturity_rating=maturity_rating,
+           private_upload_state=is_private_upload_enabled,
+           the_set_timestamp=the_set_timestamp)
 
     def postprocess(self, p, processed,is_auto_upload_enabled,is_private_upload_enabled,acount_handle,auth_key,set_name,maturity_rating):
         global upload_prompts
