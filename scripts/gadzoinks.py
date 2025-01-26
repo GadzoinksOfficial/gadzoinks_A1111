@@ -5,6 +5,7 @@ import re
 import modules.scripts as scripts
 import modules.scripts_postprocessing as scripts_postprocessing
 import modules.shared as shared
+from modules.shared import opts
 from modules import script_callbacks
 from modules.ui_components import ToolButton
 import gradio as gr
@@ -16,10 +17,11 @@ import json
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+is_debug = False
 
 def dprint(s):
-    #print(s)
-    pass
+    logger.info(s)
+    
 
 class GrowingList(list):
     def __setitem__(self, index, value):
@@ -44,7 +46,53 @@ type_of_gr_update = type(gr.update())
 xthe_rest_url ="https://kcd4tcn593.execute-api.us-east-1.amazonaws.com/ProdV1/"
 the_rest_url = "https://e6h2r5adh8.execute-api.us-east-1.amazonaws.com/prod/"
 
-        
+def on_ui_settings1():
+    dprint("on_ui_settings1")
+    section = "gadzoinks", "Gadzoinks"
+    shared.opts.add_option(
+        key="gz_handle",
+        info=shared.OptionInfo(
+            "",
+            label="Enter your handle (you can find this in the app settings->account)",
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        key="gz_authkey",
+        info=shared.OptionInfo(
+            "",
+            label="Enter your Authkey (you can find this in the app settings->account)",
+            section=section,
+        ),
+    )
+    shared.opts.add_option(
+        key="gz_private",
+        info=shared.OptionInfo(
+            False,
+            label="Enable for private upload. You must have enabled this feature in the app",
+            section=section,
+        ),
+    )
+    shared.opts.add_option(
+        key="gz_uploadimages",
+        info=shared.OptionInfo(
+            True,
+            label="Upload new images. turn this off to disable cloud storage",
+            section=section,
+        ),
+    )
+    shared.opts.add_option(
+    key="gz_age",
+    info=shared.OptionInfo(
+        "4+",
+        "Age rating for uploaded images",
+        gr.Radio,
+        {"choices": ["4+", "12+", "17+"]},
+        section=section
+    ),
+)
+    
 def printStruct(struc, indent=0):
    if isinstance(struc, dict):
      print ('  '*indent+'{')
@@ -304,20 +352,6 @@ def register_prompt_writer(prompt_writer: PromptWriter) -> None:
          dprint("register_prompt_writer on_save")
     script_callbacks.on_before_image_saved(on_save)
 '''
-def register_settings():
-    def on_ui_settings():
-        dprint("register_settings on_ui_settings")
-        section = "Gadzoinks", "Gadzoinks Exporter"
-        shared.opts.add_option(
-            key="gadzoinks_Rating",
-            info=shared.OptionInfo(
-                "G",
-                label="Maturity Rating",
-                section=section,
-            ),
-        )
-    script_callbacks.on_ui_settings(on_ui_settings)
-
 
 def callback1(component):
     dprint(f"callback1 component:{component}")
@@ -333,10 +367,11 @@ class ScriptPostprocessing(scripts_postprocessing.ScriptPostprocessing):
 
     def name(self):
         dprint("ScriptPostprocessing name")
-        return "gadzoinks"
+        return "Gadzoinks"
 
     def ui(self):
         global global_ui
+        dprint(f"gz_handle:{opts.gz_handle}")
         dprint(f"ScriptPostprocessing ui  global_ui:{global_ui}")
         tabname="extras"
         upload_button = ToolButton('👺', elem_id=f'{tabname}_gadzoinks_button3', tooltip="upload image to Gadzoinks.")
@@ -365,14 +400,21 @@ Class
 '''
 class Scripts(scripts.Script):
     def __init__(self):
+        dprint("Scripts __init__")
         global loaded_count
         self.on_after_component_elem_id = [( "extras_send_to_img2img",callback1  )]  #add( {"extras_send_to_img2img",callback } )
         loaded_count += 1
         if loaded_count % 2 == 0:
             return
+        dprint("Scripts __init__ 2")
+        script_callbacks.on_ui_settings(on_ui_settings1)
     def title(self):
         return "Gadzoink Script"
 
+    def setup(self, component, **kwargs):
+        dprint(f"*** setup {kwargs}")
+        on_ui_settings()
+        
     def on_ui_tabs(self, component, **kwargs):
         dprint(f"*** on_ui_tabs {kwargs}")
 
@@ -402,7 +444,7 @@ class Scripts(scripts.Script):
         want = {"txt2img_prompt","txt2img_neg_prompt","txt2img_sampling", "txt2img_cfg_scale", "txt2img_denoising_strength", 
             "txt2img_width", "txt2img_height", "txt2img_seed", "txt2img_steps","txt2img_hr_upscaler","txt2img_hires_steps",
             "txt2img_hr_scale","txt2img_checkpoint","txt2img_switch_at"}
-        dprint(f"G1 after_component {component.elem_id}")
+        #dprint(f"G1 after_component {component.elem_id}")
         
         if component.elem_id in want:
             global_for_download_parameters[component.elem_id] = component
@@ -427,18 +469,74 @@ class Scripts(scripts.Script):
                         global_ui['set_name'],global_ui['maturity_rating']], outputs=None)
         '''
     def show(self, is_img2img):
-        dprint("Show")
+        dprint("Scripts Show")
         return scripts.AlwaysVisible
 
+    
+    
+    
     def ui(self, is_img2img):
         global global_ui
-        dprint("UI")
+        dprint("Scripts UI")
         extra_generation_params = {}
-        enabled_flag = False
-        p_handle = ""
-        p_auth_key = ""
-        p_age_rating = "17+"
-        dprint(f"UI {p_handle} {p_auth_key} {p_age_rating} extra_generation_params:{extra_generation_params}")
+        
+        dprint(f"UI opts.gz_uploadimages: {opts.gz_uploadimages} opts.gz_handle:{opts.gz_handle} opts.gz_authkey{opts.gz_authkey}")
+        with gr.Group():
+            title="Gadzoinks"
+            with gr.Accordion(title, open=False):
+                with gr.Row():
+                    is_auto_upload_enabled = gr.Checkbox(label="Auto Upload", value=getGZUploadimages)
+                    is_private_upload_enabled = gr.Checkbox(label="Private Upload", value=getGZPrivate)
+                    maturity_rating = gr.Radio(
+                        choices=["4+", "12+", "17+"],
+                        value=getGZAge,
+                        label="Age Rating"
+                    )
+                acount_handle = gr.Textbox(label="Account Handle", value=getGZHandle,interactive=True)
+                auth_key = gr.Textbox(label="Auth Key", value=getGZAuthkey)
+                set_name = gr.Textbox(label="Set Name", value="")
+        
+        
+        global_ui['acount_handle'] = acount_handle
+        global_ui['auth_key'] = auth_key
+        global_ui['set_name']= set_name
+        global_ui['maturity_rating'] = maturity_rating
+        return [is_auto_upload_enabled,is_private_upload_enabled,acount_handle,auth_key,set_name,maturity_rating]
+
+    
+    
+    def KILLMEui(self, is_img2img):
+        global global_ui
+        dprint("Scripts UI")
+        extra_generation_params = {}
+        enabled_flag = opts.gz_uploadimages
+        p_private = opts.gz_private
+        p_handle = opts.gz_handle if hasattr(opts, 'gz_handle') else ''
+        p_auth_key = opts.gz_authkey if hasattr(opts, 'gz_authkey') else ''
+        p_age_rating = opts.gz_age if hasattr(opts, 'gz_age') else '4+'
+
+        dprint(f"UI Values: {p_handle} {p_auth_key} {p_age_rating}")
+        with gr.Group():
+            with gr.Accordion("Gadzoinks", open=False):
+                with gr.Row():
+                    is_auto_upload_enabled = gr.Checkbox(label="Auto Upload", value=enabled_flag)
+                    is_private_upload_enabled = gr.Checkbox(label="Private Upload", value=p_private)
+                    maturity_rating = gr.Radio(
+                        choices=["4+", "12+", "17+"],
+                        value=p_age_rating,
+                        label="Age Rating"
+                    )
+                acount_handle = gr.Textbox(label="Account Handle", value=p_handle)
+                auth_key = gr.Textbox(label="Auth Key", value=p_auth_key)
+                set_name = gr.Textbox(label="Set Name", value="")
+        
+
+        components = [is_auto_upload_enabled, is_private_upload_enabled, acount_handle, auth_key, set_name, maturity_rating]
+        global_ui.update(dict(zip(['acount_handle', 'auth_key', 'set_name', 'maturity_rating'], 
+                             [acount_handle, auth_key, set_name, maturity_rating])))
+    
+        return components
+        """
         with gr.Group():
             title="Gadzoinks"
             with gr.Accordion(title, open=False):
@@ -447,7 +545,7 @@ class Scripts(scripts.Script):
                         label="Auto Upload",interactive=True,value=enabled_flag
                     )
                     is_private_upload_enabled = gr.Checkbox(
-                        label="Private Upload",interactive=True,value=enabled_flag
+                        label="Private Upload",interactive=True,value=p_private
                     )
                     maturity_rating = gr.Dropdown(
                         ["4+", "12+", "17+"], value=p_age_rating,
@@ -468,7 +566,7 @@ class Scripts(scripts.Script):
         global_ui['set_name']= set_name
         global_ui['maturity_rating'] = maturity_rating
         return [is_auto_upload_enabled,is_private_upload_enabled,acount_handle,auth_key,set_name,maturity_rating]
-    
+        """
     def process_images(self,p):
         #print(f"process_images  {p.js()}")
         pass
@@ -608,4 +706,23 @@ class Scripts(scripts.Script):
         dprint( f"processed.js: ")
         dprint(generation_info_js)
         return True
+    
+def getGZHandle():
+    return opts.gz_handle
+def getGZAuthkey():
+    return opts.gz_authkey
+def getGZUploadimages():
+    return opts.gz_uploadimages
+def getGZPrivate():
+    return opts.gz_private
+def getGZAge():
+    return opts.gz_age
+
+
+# main
+script_callbacks.on_ui_settings(on_ui_settings1)
+is_debug = getattr(opts, "is_debug", False)
+is_debug=False
+if is_debug:
+    logger.setLevel(logging.DEBUG)   # not using logger yet
     
